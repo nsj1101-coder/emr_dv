@@ -1,0 +1,246 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// 사용자/의료진
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      UserRole @default(DOCTOR)
+  specialty String?
+  licenseNo String?
+  phone     String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  appointments  Appointment[]
+  medicalCharts MedicalChart[]
+  prescriptions Prescription[]
+  @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  DOCTOR
+  NURSE
+  RECEPTIONIST
+  PHARMACIST
+}
+
+// 환자
+model Patient {
+  id            String        @id @default(cuid())
+  chartNumber   String        @unique
+  name          String
+  residentNo    String?
+  birthDate     DateTime
+  gender        Gender
+  phone         String
+  address       String?
+  bloodType     String?
+  allergies     String?
+  memo          String?
+  insuranceType InsuranceType @default(NATIONAL)
+  insuranceNo   String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  appointments  Appointment[]
+  medicalCharts MedicalChart[]
+  prescriptions Prescription[]
+  labOrders     LabOrder[]
+  billings      Billing[]
+  vitalSigns    VitalSign[]
+  @@map("patients")
+}
+
+enum Gender { MALE FEMALE }
+
+enum InsuranceType {
+  NATIONAL
+  MEDICAID
+  INDUSTRIAL
+  CAR
+  SELF_PAY
+}
+
+// 접수/예약
+model Appointment {
+  id          String            @id @default(cuid())
+  patientId   String
+  doctorId    String
+  date        DateTime
+  time        String
+  status      AppointmentStatus @default(SCHEDULED)
+  type        VisitType         @default(OUTPATIENT)
+  department  String?
+  symptom     String?
+  memo        String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  patient Patient @relation(fields: [patientId], references: [id])
+  doctor  User    @relation(fields: [doctorId], references: [id])
+  @@map("appointments")
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  CHECKED_IN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum VisitType {
+  OUTPATIENT
+  INPATIENT
+  EMERGENCY
+  FOLLOW_UP
+}
+
+// 진료기록(차트)
+model MedicalChart {
+  id             String   @id @default(cuid())
+  patientId      String
+  doctorId       String
+  visitDate      DateTime @default(now())
+  chiefComplaint String?
+  presentIllness String?
+  subjective     String?
+  objective      String?
+  assessment     String?
+  plan           String?
+  diagnosisCode  String?
+  diagnosisName  String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  patient       Patient        @relation(fields: [patientId], references: [id])
+  doctor        User           @relation(fields: [doctorId], references: [id])
+  prescriptions Prescription[]
+  @@map("medical_charts")
+}
+
+// 처방
+model Prescription {
+  id        String             @id @default(cuid())
+  chartId   String
+  patientId String
+  doctorId  String
+  status    PrescriptionStatus @default(PENDING)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+  chart   MedicalChart       @relation(fields: [chartId], references: [id])
+  patient Patient            @relation(fields: [patientId], references: [id])
+  doctor  User               @relation(fields: [doctorId], references: [id])
+  items   PrescriptionItem[]
+  @@map("prescriptions")
+}
+
+enum PrescriptionStatus { PENDING DISPENSED CANCELLED }
+
+model PrescriptionItem {
+  id             String @id @default(cuid())
+  prescriptionId String
+  medicineCode   String
+  medicineName   String
+  dosage         String
+  frequency      String
+  duration       Int
+  route          String @default("경구")
+  instruction    String?
+  prescription Prescription @relation(fields: [prescriptionId], references: [id])
+  @@map("prescription_items")
+}
+
+// 검사
+model LabOrder {
+  id         String      @id @default(cuid())
+  patientId  String
+  orderDate  DateTime    @default(now())
+  category   LabCategory
+  testCode   String
+  testName   String
+  status     LabStatus   @default(ORDERED)
+  resultDate DateTime?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  patient Patient     @relation(fields: [patientId], references: [id])
+  results LabResult[]
+  @@map("lab_orders")
+}
+
+enum LabCategory { BLOOD URINE IMAGING PATHOLOGY OTHER }
+enum LabStatus { ORDERED COLLECTED IN_PROGRESS COMPLETED CANCELLED }
+
+model LabResult {
+  id         String  @id @default(cuid())
+  labOrderId String
+  itemName   String
+  value      String
+  unit       String?
+  refMin     String?
+  refMax     String?
+  abnormal   Boolean @default(false)
+  memo       String?
+  labOrder LabOrder @relation(fields: [labOrderId], references: [id])
+  @@map("lab_results")
+}
+
+// 활력징후
+model VitalSign {
+  id          String   @id @default(cuid())
+  patientId   String
+  measuredAt  DateTime @default(now())
+  systolic    Int?
+  diastolic   Int?
+  pulse       Int?
+  temperature Float?
+  respiration Int?
+  spo2        Float?
+  height      Float?
+  weight      Float?
+  memo        String?
+  patient Patient @relation(fields: [patientId], references: [id])
+  @@map("vital_signs")
+}
+
+// 수납/청구
+model Billing {
+  id            String        @id @default(cuid())
+  patientId     String
+  billingDate   DateTime      @default(now())
+  totalAmount   Int
+  insurancePay  Int           @default(0)
+  patientPay    Int
+  status        BillingStatus @default(UNPAID)
+  paidAt        DateTime?
+  paymentMethod String?
+  memo          String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  patient Patient       @relation(fields: [patientId], references: [id])
+  items   BillingItem[]
+  @@map("billings")
+}
+
+enum BillingStatus { UNPAID PAID PARTIAL REFUNDED }
+
+model BillingItem {
+  id         String @id @default(cuid())
+  billingId  String
+  itemCode   String
+  itemName   String
+  quantity   Int    @default(1)
+  unitPrice  Int
+  totalPrice Int
+  billing Billing @relation(fields: [billingId], references: [id])
+  @@map("billing_items")
+}
